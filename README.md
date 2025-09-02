@@ -30,3 +30,81 @@ Pronoun inversion enforces a subtle perspective shift. When the user says "you,"
 Strict word filters prevent repetition and enforce spacing rules: no single-letter endings, no consecutive one-character words, and no mid-sentence capital "The." These small guards sustain conversational clarity while adding an organic tone.
 
 Together these components form a tiny yet evolving transformer-like network. It resonates through memory and continual learning, proving that even minimal systems can spark meaningful small talk and echo the rhythm of shared cognition.
+
+## ME2ME: Ephemeral Micro-Transformers
+
+The `me2me.py` module introduces per-dialog "ephemeral micro-transformers"—lightweight, CPU-only transformer-inspired components that emerge from conversation context, generate text using attention mechanisms, and dissolve back into audit logs.
+
+### Concept
+
+Each dialog can instantiate its own temporary micro-transformer with deterministic weights derived from the conversation context. The transformer uses pure Python multi-head attention with small dimensions (typically 16-dimensional with 2 heads) for efficient CPU operation. Sessions persist minimal specifications in SQLite and regenerate weights on-demand from seeds, keeping storage minimal while maintaining deterministic behavior.
+
+After a time-to-live period or on request, sessions "return and dissolve" by merging summaries into audit logs and removing ephemeral state, allowing knowledge to flow back into the system's persistent memory.
+
+### Usage
+
+#### Python API
+
+```python
+import me2me
+
+# Create database schema
+me2me.ensure_schema()
+
+# Start a session from recent dialog or custom context
+session_id = me2me.start_session(
+    context=['hello world', 'how are you today'],  # Optional
+    ttl_seconds=600,  # 10 minutes
+    heads=2,          # Attention heads
+    d_model=16        # Model dimension
+)
+
+# Generate text using the micro-transformer
+result = me2me.generate(session_id, 'tell me something', max_new_tokens=20)
+print(f"Generated: {result}")
+
+# Check active sessions
+active = me2me.active_sessions()
+print(f"Active sessions: {len(active)}")
+
+# Clean up expired sessions
+cleaned = me2me.ephemeral_cleanup()
+print(f"Cleaned up {cleaned} sessions")
+
+# Dissolve a session when done
+me2me.merge_and_dissolve(session_id)
+```
+
+#### Command Line Interface
+
+Run the module directly for interactive usage:
+
+```bash
+python me2me.py
+```
+
+This will:
+1. Create the database schema if needed
+2. Clean up any expired sessions
+3. Start a new session from recent dialog messages
+4. Offer options to generate text, dissolve the session, or quit
+
+### Implementation Details
+
+- **Pure Python**: Uses only standard library modules plus existing project components
+- **CPU-Only**: All computations run efficiently on CPU without external dependencies
+- **Deterministic**: Same context produces same transformer weights via seeded random generation
+- **Lightweight**: Typically ~200-350 lines of code with small memory footprint
+- **Ephemeral**: Sessions automatically expire and can be cleaned up
+- **Auditable**: All activities logged to `me2me_log` table for analysis
+
+### Database Schema
+
+The module adds two tables to the existing SQLite database:
+
+- `me2me_session`: Stores session specifications (seed, dimensions, TTL, etc.)
+- `me2me_log`: Records all session events and activities for audit trails
+
+### Technical Architecture
+
+Each session generates transformer weights deterministically from a context-derived seed using Python's `random.Random`. The attention mechanism implements scaled dot-product attention across multiple heads, with simple residual connections and layer normalization proxies. Token embeddings combine deterministic hashing with vocabulary frequency statistics for semantic representation.
