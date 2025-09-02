@@ -65,7 +65,7 @@ class Engine:
             sent[-1] = 'hmm'
         if sent:
             sent[0] = sent[0].capitalize()
-        return ' '.join(sent) + '.
+        return ' '.join(sent) + '.'
 
     def reply(self, message: str) -> str:
         words = tokenize(message)
