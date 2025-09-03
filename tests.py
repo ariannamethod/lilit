@@ -1,4 +1,4 @@
-from nlp.verb_graph import VerbGraph
+from verb_graph import VerbGraph
 
 
 def test_preferred_punct():
