@@ -82,12 +82,24 @@ class MeBot:
                     )
                     if predicted_text.strip().lower() == user_message.strip().lower():
                         logger.info(f"Prediction matched actual message for user {user_id}")
+                except asyncio.CancelledError:
+                    logger.info(
+                        f"Previous prediction for user {user_id} was cancelled"
+                    )
                 except Exception as e:
                     logger.warning(f"Previous prediction failed: {e}")
                 finally:
                     self.predictions.pop(user_id, None)
             else:
-                logger.info(f"Prediction for user {user_id} not ready yet")
+                previous_task.cancel()
+                try:
+                    await previous_task
+                except asyncio.CancelledError:
+                    logger.info(
+                        f"Cancelled ongoing prediction for user {user_id}"
+                    )
+                finally:
+                    self.predictions.pop(user_id, None)
 
         try:
             # Generate reply using the ME engine
