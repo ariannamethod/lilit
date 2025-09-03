@@ -1,14 +1,14 @@
 import asyncio
 import random
 from typing import List, Tuple, Set, Optional
-from memory import init_db, tokenize, get_vocab, metrics
+from memory import tokenize, get_vocab, metrics
 from rag import retrieve
 from method import train
 
 
 class Engine:
     def __init__(self) -> None:
-        init_db()
+        """Initialize the engine."""
 
     def _lengths(self, entropy: float, perplexity: float) -> Tuple[int, int]:
         base1 = 5 + int(entropy) % 5
