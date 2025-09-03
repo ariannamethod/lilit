@@ -70,7 +70,6 @@ class Engine:
     async def reply(self, message: str) -> str:
         words = tokenize(message)
         vocab = get_vocab()
-        train_future = asyncio.create_task(asyncio.to_thread(train, message))
 
         async def generate() -> str:
             metrics_future = asyncio.create_task(asyncio.to_thread(metrics, words, vocab))
@@ -91,7 +90,7 @@ class Engine:
             return f"{first} {second}"
 
         reply_text, _ = await asyncio.gather(
-            generate(), train_future
+            generate(), train(message)
         )
         return reply_text
 

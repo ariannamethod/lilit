@@ -25,6 +25,8 @@ The engine then calculates semantic distance, choosing two word sets: one roughl
 
 After each exchange, the method module performs on-the-fly training by recording bigram transitions. Over time this evolving Markov chain shapes probabilities, letting the engine adapt to the user's style without any initial training phase.
 
+Retraining happens asynchronously. The `train` coroutine updates a shared SQLite connection, maintaining an indexed `bigram` table on `(w1, w2)` so counts can be incremented in parallel with reply generation without locking delays.
+
 Pronoun inversion enforces a subtle perspective shift. When the user says "you," the engine gravitates toward "I" or "me," and when "I" appears, it reflects back with "you." This interplay fosters a sense of subjectivity in every reply.
 
 Strict word filters prevent repetition and enforce spacing rules: no single-letter endings, no consecutive one-character words, and no mid-sentence capital "The." These small guards sustain conversational clarity while adding an organic tone.
