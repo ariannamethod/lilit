@@ -26,12 +26,11 @@ class Engine:
         }
         return [mapping.get(w, w) for w in words]
 
-    def _generate(self, words: List[str], distance: float, length: int, used: Set[str], pref: Optional[List[str]] = None) -> str:
+    def _generate(self, words: List[str], candidates: List[str], length: int, used: Set[str], pref: Optional[List[str]] = None) -> str:
         vocab = get_vocab()
         _, _, resonance = metrics(words, vocab)
         pronouns = {'you': 'i', 'u': 'i', 'i': 'you', 'me': 'you', 'we': 'you'}
         pronoun = next((pronouns[w] for w in words if w in pronouns), None)
-        candidates = retrieve(words, distance=distance)
         random.shuffle(candidates)
         sent: List[str] = []
         if pronoun and pronoun not in used:
@@ -71,24 +70,28 @@ class Engine:
     async def reply(self, message: str) -> str:
         words = tokenize(message)
         vocab = get_vocab()
-
-        metrics_future = asyncio.create_task(asyncio.to_thread(metrics, words, vocab))
-        retrieve_future = asyncio.create_task(asyncio.to_thread(retrieve, words))
         train_future = asyncio.create_task(asyncio.to_thread(train, message))
 
         async def generate() -> str:
+            metrics_future = asyncio.create_task(asyncio.to_thread(metrics, words, vocab))
+            retrieve_05_future = asyncio.create_task(asyncio.to_thread(retrieve, words, distance=0.5))
+            retrieve_07_future = asyncio.create_task(asyncio.to_thread(retrieve, words, distance=0.7))
+
             entropy, perplexity, _ = await metrics_future
+            candidates_05, candidates_07 = await asyncio.gather(
+                retrieve_05_future, retrieve_07_future
+            )
             len1, len2 = self._lengths(entropy, perplexity)
             used: Set[str] = set()
             pref = self._invert_pronouns(words)
             first, second = await asyncio.gather(
-                asyncio.to_thread(self._generate, words, 0.5, len1, used, pref=pref),
-                asyncio.to_thread(self._generate, words, 0.7, len2, used, pref=pref),
+                asyncio.to_thread(self._generate, words, candidates_05, len1, used, pref=pref),
+                asyncio.to_thread(self._generate, words, candidates_07, len2, used, pref=pref),
             )
             return f"{first} {second}"
 
-        reply_text, _, _, _ = await asyncio.gather(
-            generate(), metrics_future, retrieve_future, train_future
+        reply_text, _ = await asyncio.gather(
+            generate(), train_future
         )
         return reply_text
 
