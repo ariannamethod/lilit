@@ -11,12 +11,24 @@ Sessions persist minimal specs in SQLite and regenerate weights on-demand from s
 
 import asyncio
 import sqlite3
+import aiosqlite
 import hashlib
 import random
 import time
 import math
 from typing import List, Dict, Optional, Tuple, Any
 from memory import DB_PATH, tokenize, get_vocab, get_recent_messages
+
+
+DB_POOL: Optional[aiosqlite.Connection] = None
+
+
+async def get_pool() -> aiosqlite.Connection:
+    """Return a singleton aiosqlite connection."""
+    global DB_POOL
+    if DB_POOL is None:
+        DB_POOL = await aiosqlite.connect(DB_PATH)
+    return DB_POOL
 
 
 def ensure_schema() -> None:
@@ -65,110 +77,93 @@ def _compute_context_signature(context: List[str]) -> str:
     return hashlib.sha1(token_string.encode()).hexdigest()[:16]
 
 
-def _find_existing_session(context_hash: str, now: float) -> Optional[int]:
+async def _find_existing_session(context_hash: str, now: float) -> Optional[int]:
     """Return existing session id if context_hash matches and ttl is valid."""
-    with sqlite3.connect(DB_PATH) as conn:
-        c = conn.cursor()
-        c.execute(
-            "SELECT id FROM me2me_session WHERE context_hash = ? AND ttl > ?",
-            (context_hash, now),
-        )
-        row = c.fetchone()
+    conn = await get_pool()
+    async with conn.execute(
+        "SELECT id FROM me2me_session WHERE context_hash = ? AND ttl > ?",
+        (context_hash, now),
+    ) as cursor:
+        row = await cursor.fetchone()
         return row[0] if row else None
 
 
-def start_session(context: Optional[List[str]] = None, ttl_seconds: int = 600,
-                 heads: int = 2, d_model: int = 16) -> int:
-    """
-    Start a new ephemeral micro-transformer session.
-    
-    Args:
-        context: List of messages for context, or None to use recent dialog
-        ttl_seconds: Time-to-live for the session
-        heads: Number of attention heads
-        d_model: Model dimension
-        
-    Returns:
-        Session ID
-    """
-    ensure_schema()
-    
+async def start_session_async(
+    context: Optional[List[str]] = None,
+    ttl_seconds: int = 600,
+    heads: int = 2,
+    d_model: int = 16,
+) -> int:
+    """Start a new ephemeral micro-transformer session."""
+    await asyncio.to_thread(ensure_schema)
+
     # Build context from provided messages or recent dialog
-    if context is None:
-        context = get_recent_messages(8)
-    
-    if not context:
-        context = ["hello", "welcome"]  # Fallback if no context available
-    
-    # Compute deterministic seed from context
-    context_hash = _compute_context_signature(context)
-    seed = context_hash
-
-    now = time.time()
-    existing = _find_existing_session(context_hash, now)
-    if existing is not None:
-        return existing
-
-    ttl = now + ttl_seconds
-
-    with sqlite3.connect(DB_PATH) as conn:
-        c = conn.cursor()
-        c.execute(
-            """
-            INSERT INTO me2me_session (ts, seed, ttl, heads, d_model, context_hash, merged)
-            VALUES (?, ?, ?, ?, ?, ?, 0)
-        """,
-            (now, seed, ttl, heads, d_model, context_hash),
-        )
-
-        session_id = c.lastrowid
-
-        # Log session creation
-        top_tokens = []
-        for msg in context[:3]:  # First few messages for summary
-            top_tokens.extend(tokenize(msg)[:5])  # Top tokens from each
-
-        summary = (
-            f"Started session: heads={heads}, d_model={d_model}, ttl={ttl_seconds}s, "
-            f"top_tokens={top_tokens[:10]}"
-        )
-        c.execute(
-            """
-            INSERT INTO me2me_log (session_id, ts, event, data)
-            VALUES (?, ?, 'session_start', ?)
-        """,
-            (session_id, now, summary),
-        )
-
-        conn.commit()
-
-    return session_id
-
-
-async def spawn_session(context: Optional[List[str]] = None, ttl_seconds: int = 600,
-                        heads: int = 2, d_model: int = 16) -> int:
-    """Start a session without blocking the event loop.
-
-    Args mirror :func:`start_session`.
-
-    Returns:
-        Awaitable session ID.
-    """
-    ensure_schema()
-
     if context is None:
         context = await asyncio.to_thread(get_recent_messages, 8)
 
     if not context:
-        context = ["hello", "welcome"]
+        context = ["hello", "welcome"]  # Fallback if no context available
 
     context_hash = _compute_context_signature(context)
+    seed = context_hash
+
     now = time.time()
-    existing = await asyncio.to_thread(_find_existing_session, context_hash, now)
+    existing = await _find_existing_session(context_hash, now)
     if existing is not None:
         return existing
 
-    return await asyncio.to_thread(start_session, context, ttl_seconds, heads, d_model)
+    ttl = now + ttl_seconds
+    conn = await get_pool()
+    cur = await conn.execute(
+        """
+        INSERT INTO me2me_session (ts, seed, ttl, heads, d_model, context_hash, merged)
+        VALUES (?, ?, ?, ?, ?, ?, 0)
+        """,
+        (now, seed, ttl, heads, d_model, context_hash),
+    )
+
+    session_id = cur.lastrowid
+
+    # Log session creation
+    top_tokens = []
+    for msg in context[:3]:  # First few messages for summary
+        top_tokens.extend(tokenize(msg)[:5])  # Top tokens from each
+
+    summary = (
+        f"Started session: heads={heads}, d_model={d_model}, ttl={ttl_seconds}s, "
+        f"top_tokens={top_tokens[:10]}"
+    )
+    await conn.execute(
+        """
+        INSERT INTO me2me_log (session_id, ts, event, data)
+        VALUES (?, ?, 'session_start', ?)
+        """,
+        (session_id, now, summary),
+    )
+
+    await conn.commit()
+
+    return session_id
+
+
+def start_session(
+    context: Optional[List[str]] = None,
+    ttl_seconds: int = 600,
+    heads: int = 2,
+    d_model: int = 16,
+) -> int:
+    """Synchronous wrapper around :func:`start_session_async`."""
+    return asyncio.run(start_session_async(context, ttl_seconds, heads, d_model))
+
+
+async def spawn_session(
+    context: Optional[List[str]] = None,
+    ttl_seconds: int = 600,
+    heads: int = 2,
+    d_model: int = 16,
+) -> int:
+    """Start a session without blocking the event loop."""
+    return await start_session_async(context, ttl_seconds, heads, d_model)
 
 
 def _generate_weights(seed: str, d_model: int, heads: int) -> Dict[str, Any]:
