@@ -2,7 +2,7 @@ import asyncio
 import re
 
 from me import Engine
-from verb_graph import VerbGraph
+from memory import VerbGraph
 
 
 class ChatEngine:
