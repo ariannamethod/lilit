@@ -26,7 +26,7 @@ from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 
 from me import Engine
-from me_predict import predict_next
+from me_predict import predict_next_async
 
 # Configure minimal logging for Railway
 logging.basicConfig(
@@ -98,7 +98,7 @@ class MeBot:
             logger.info(f"Replied to user {user_id}: {reply[:50]}...")
 
             # Generate next message prediction in the background
-            task = asyncio.create_task(asyncio.to_thread(predict_next, user_message, reply))
+            task = asyncio.create_task(predict_next_async(user_message, reply))
             self.predictions[user_id] = task
 
         except Exception as e:
