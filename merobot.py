@@ -20,7 +20,6 @@ For Railway deployment:
 import asyncio
 import logging
 import os
-from typing import Optional
 
 from dotenv import load_dotenv
 from telegram import Update
@@ -42,6 +41,7 @@ class MeBot:
     def __init__(self):
         """Initialize the bot with the ME engine."""
         self.engine = Engine()
+        self.predictions: dict[int, asyncio.Task] = {}
         logger.info("ME engine initialized")
     
     async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -72,22 +72,37 @@ class MeBot:
         user_id = update.effective_user.id
         
         logger.info(f"Message from user {user_id}: {user_message[:50]}...")
-        
+
+        # Check for a previous prediction
+        previous_task = self.predictions.get(user_id)
+        if previous_task:
+            if previous_task.done():
+                try:
+                    predicted_text = previous_task.result()
+                    logger.info(
+                        f"Previous prediction for user {user_id}: {predicted_text[:50]}..."
+                    )
+                    if predicted_text.strip().lower() == user_message.strip().lower():
+                        logger.info(f"Prediction matched actual message for user {user_id}")
+                except Exception as e:
+                    logger.warning(f"Previous prediction failed: {e}")
+                finally:
+                    self.predictions.pop(user_id, None)
+            else:
+                logger.info(f"Prediction for user {user_id} not ready yet")
+
         try:
             # Generate reply using the ME engine
             reply = self.engine.reply(user_message)
-            
+
             # Send the reply
             await update.message.reply_text(reply)
             logger.info(f"Replied to user {user_id}: {reply[:50]}...")
-            
-            # Optional: Generate and log next message prediction
-            try:
-                predicted_next = predict_next(user_message, reply)
-                logger.info(f"Next message prediction for user {user_id}: {predicted_next[:50]}...")
-            except Exception as e:
-                logger.warning(f"Prediction failed: {e}")
-                
+
+            # Generate next message prediction in the background
+            task = asyncio.create_task(asyncio.to_thread(predict_next, user_message, reply))
+            self.predictions[user_id] = task
+
         except Exception as e:
             logger.error(f"Error processing message from user {user_id}: {e}")
             await update.message.reply_text("Sorry, I encountered an error processing your message.")
