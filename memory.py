@@ -48,3 +48,6 @@ def metrics(words: List[str], vocab: Dict[str, int]) -> Tuple[float, float, str]
     perplexity = 2 ** entropy
     resonance_word = min(words, key=lambda w: vocab.get(w, 1)) if words else ''
     return entropy, perplexity, resonance_word
+
+# Ensure the database exists when the module is imported
+init_db()
