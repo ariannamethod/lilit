@@ -75,6 +75,12 @@ print(f"Cleaned up {cleaned} sessions")
 me2me.merge_and_dissolve(session_id)
 ```
 
+To start a session without blocking an existing event loop, use the asynchronous helper:
+
+```python
+session_id = await me2me.spawn_session(context=['hello world'])
+```
+
 #### Command Line Interface
 
 Run the module directly for interactive usage:

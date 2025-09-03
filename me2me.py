@@ -9,6 +9,7 @@ The transformer uses pure Python multi-head attention with small dimensions for 
 Sessions persist minimal specs in SQLite and regenerate weights on-demand from seeds.
 """
 
+import asyncio
 import sqlite3
 import hashlib
 import random
@@ -64,7 +65,7 @@ def _compute_context_signature(context: List[str]) -> str:
     return hashlib.sha1(token_string.encode()).hexdigest()[:16]
 
 
-def start_session(context: Optional[List[str]] = None, ttl_seconds: int = 600, 
+def start_session(context: Optional[List[str]] = None, ttl_seconds: int = 600,
                  heads: int = 2, d_model: int = 16) -> int:
     """
     Start a new ephemeral micro-transformer session.
@@ -118,6 +119,18 @@ def start_session(context: Optional[List[str]] = None, ttl_seconds: int = 600,
         conn.commit()
     
     return session_id
+
+
+async def spawn_session(context: Optional[List[str]] = None, ttl_seconds: int = 600,
+                        heads: int = 2, d_model: int = 16) -> int:
+    """Start a session without blocking the event loop.
+
+    Args mirror :func:`start_session`.
+
+    Returns:
+        Awaitable session ID.
+    """
+    return await asyncio.to_thread(start_session, context, ttl_seconds, heads, d_model)
 
 
 def _generate_weights(seed: str, d_model: int, heads: int) -> Dict[str, Any]:
