@@ -2,6 +2,7 @@ import sqlite3
 import math
 import time
 import re
+from collections import Counter
 from typing import List, Tuple, Dict
 
 DB_PATH = 'memory.db'
@@ -18,11 +19,14 @@ def tokenize(text: str) -> List[str]:
 
 def log_message(message: str) -> None:
     words = tokenize(message)
+    word_counts = Counter(words)
     with sqlite3.connect(DB_PATH) as conn:
         c = conn.cursor()
         c.execute('INSERT INTO dialog (message, ts) VALUES (?, ?)', (message, time.time()))
-        for w in words:
-            c.execute('INSERT INTO vocab (word, count) VALUES (?, 1) ON CONFLICT(word) DO UPDATE SET count=count+1', (w,))
+        c.executemany(
+            'INSERT INTO vocab (word, count) VALUES (?, ?) ON CONFLICT(word) DO UPDATE SET count=count+?',
+            [(w, cnt, cnt) for w, cnt in word_counts.items()],
+        )
         conn.commit()
 
 def get_recent_messages(n: int = 20) -> List[str]:
