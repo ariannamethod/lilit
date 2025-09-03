@@ -1,3 +1,4 @@
+import asyncio
 import random
 from typing import List, Tuple, Set, Optional
 from memory import init_db, tokenize, get_vocab, metrics
@@ -67,17 +68,29 @@ class Engine:
             sent[0] = sent[0].capitalize()
         return ' '.join(sent) + '.'
 
-    def reply(self, message: str) -> str:
+    async def reply(self, message: str) -> str:
         words = tokenize(message)
         vocab = get_vocab()
-        entropy, perplexity, _ = metrics(words, vocab)
-        len1, len2 = self._lengths(entropy, perplexity)
-        used: Set[str] = set()
-        pref = self._invert_pronouns(words)
-        first = self._generate(words, 0.5, len1, used, pref=pref)
-        second = self._generate(words, 0.7, len2, used, pref=pref)
-        train(message)
-        return f"{first} {second}"
+
+        metrics_future = asyncio.create_task(asyncio.to_thread(metrics, words, vocab))
+        retrieve_future = asyncio.create_task(asyncio.to_thread(retrieve, words))
+        train_future = asyncio.create_task(asyncio.to_thread(train, message))
+
+        async def generate() -> str:
+            entropy, perplexity, _ = await metrics_future
+            len1, len2 = self._lengths(entropy, perplexity)
+            used: Set[str] = set()
+            pref = self._invert_pronouns(words)
+            first, second = await asyncio.gather(
+                asyncio.to_thread(self._generate, words, 0.5, len1, used, pref=pref),
+                asyncio.to_thread(self._generate, words, 0.7, len2, used, pref=pref),
+            )
+            return f"{first} {second}"
+
+        reply_text, _, _, _ = await asyncio.gather(
+            generate(), metrics_future, retrieve_future, train_future
+        )
+        return reply_text
 
 
 if __name__ == '__main__':
@@ -85,6 +98,6 @@ if __name__ == '__main__':
     try:
         while True:
             msg = input('> ')
-            print(bot.reply(msg))
+            print(asyncio.run(bot.reply(msg)))
     except KeyboardInterrupt:
         pass

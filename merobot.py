@@ -91,7 +91,7 @@ class MeBot:
 
         try:
             # Generate reply using the ME engine
-            reply = self.engine.reply(user_message)
+            reply = await self.engine.reply(user_message)
 
             # Send the reply
             await update.message.reply_text(reply)
