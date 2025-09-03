@@ -114,3 +114,17 @@ The module adds two tables to the existing SQLite database:
 ### Technical Architecture
 
 Each session generates transformer weights deterministically from a context-derived seed using Python's `random.Random`. The attention mechanism implements scaled dot-product attention across multiple heads, with simple residual connections and layer normalization proxies. Token embeddings combine deterministic hashing with vocabulary frequency statistics for semantic representation.
+## Verb Graph
+
+The chat engine now tracks how verbs end. A tiny graph links verbs to the punctuation that follows them, and each edge weight counts observed pairs. When generating a reply, the engine consults this graph to choose the closing mark for its final verb.
+
+### Example
+
+```
+> I run!
+Run!
+> you run?
+Run!
+```
+
+After seeing more exclamations after "run", the engine favors `!` when it replies.
