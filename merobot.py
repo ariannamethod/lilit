@@ -46,9 +46,7 @@ class MeBot:
     
     async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle the /start command."""
-        await update.message.reply_text(
-            "Hello! I'm the ME bot. Send me any message and I'll respond using the ME engine."
-        )
+        await update.message.reply_text("Hello!")
         logger.info(f"Start command from user {update.effective_user.id}")
     
     async def help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
