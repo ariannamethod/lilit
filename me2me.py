@@ -65,6 +65,18 @@ def _compute_context_signature(context: List[str]) -> str:
     return hashlib.sha1(token_string.encode()).hexdigest()[:16]
 
 
+def _find_existing_session(context_hash: str, now: float) -> Optional[int]:
+    """Return existing session id if context_hash matches and ttl is valid."""
+    with sqlite3.connect(DB_PATH) as conn:
+        c = conn.cursor()
+        c.execute(
+            "SELECT id FROM me2me_session WHERE context_hash = ? AND ttl > ?",
+            (context_hash, now),
+        )
+        row = c.fetchone()
+        return row[0] if row else None
+
+
 def start_session(context: Optional[List[str]] = None, ttl_seconds: int = 600,
                  heads: int = 2, d_model: int = 16) -> int:
     """
@@ -91,33 +103,45 @@ def start_session(context: Optional[List[str]] = None, ttl_seconds: int = 600,
     # Compute deterministic seed from context
     context_hash = _compute_context_signature(context)
     seed = context_hash
-    
-    # Create session record
+
     now = time.time()
+    existing = _find_existing_session(context_hash, now)
+    if existing is not None:
+        return existing
+
     ttl = now + ttl_seconds
-    
+
     with sqlite3.connect(DB_PATH) as conn:
         c = conn.cursor()
-        c.execute("""
+        c.execute(
+            """
             INSERT INTO me2me_session (ts, seed, ttl, heads, d_model, context_hash, merged)
             VALUES (?, ?, ?, ?, ?, ?, 0)
-        """, (now, seed, ttl, heads, d_model, context_hash))
-        
+        """,
+            (now, seed, ttl, heads, d_model, context_hash),
+        )
+
         session_id = c.lastrowid
-        
+
         # Log session creation
         top_tokens = []
         for msg in context[:3]:  # First few messages for summary
             top_tokens.extend(tokenize(msg)[:5])  # Top tokens from each
-        
-        summary = f"Started session: heads={heads}, d_model={d_model}, ttl={ttl_seconds}s, top_tokens={top_tokens[:10]}"
-        c.execute("""
+
+        summary = (
+            f"Started session: heads={heads}, d_model={d_model}, ttl={ttl_seconds}s, "
+            f"top_tokens={top_tokens[:10]}"
+        )
+        c.execute(
+            """
             INSERT INTO me2me_log (session_id, ts, event, data)
             VALUES (?, ?, 'session_start', ?)
-        """, (session_id, now, summary))
-        
+        """,
+            (session_id, now, summary),
+        )
+
         conn.commit()
-    
+
     return session_id
 
 
@@ -130,6 +154,20 @@ async def spawn_session(context: Optional[List[str]] = None, ttl_seconds: int = 
     Returns:
         Awaitable session ID.
     """
+    ensure_schema()
+
+    if context is None:
+        context = await asyncio.to_thread(get_recent_messages, 8)
+
+    if not context:
+        context = ["hello", "welcome"]
+
+    context_hash = _compute_context_signature(context)
+    now = time.time()
+    existing = await asyncio.to_thread(_find_existing_session, context_hash, now)
+    if existing is not None:
+        return existing
+
     return await asyncio.to_thread(start_session, context, ttl_seconds, heads, d_model)
 
 
